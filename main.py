@@ -17,24 +17,77 @@ GITHUB_ACCESS_TOKEN = os.getenv(
     "GITHUB_ACCESS_TOKEN",
 )
 
-SLACK_WEBHOOK = os.getenv(
+# Get the Slack webhook URL from environment variable or use a default value
+# Make sure the URL is properly formatted (not escaped)
+SLACK_WEBHOOK_RAW = os.getenv(
     "SLACK_WEBHOOK_URL",
+    "https://hooks.slack.com/services/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",
 )
-LAST_RELEASES_FILE = "last_releases.json"
+
+# Ensure the URL is not escaped by removing any escape sequences
+SLACK_WEBHOOK = SLACK_WEBHOOK_RAW.replace("\\x3a", ":")
+
+# GitHub Gist configuration
+GIST_ID = os.getenv("GIST_ID", "")  # Set this to your Gist ID
+GIST_FILENAME = "github_releases_data.json"
 
 
 def load_last_releases():
-    """Load the last known release IDs for all repositories"""
-    if Path(LAST_RELEASES_FILE).exists():
-        with open(LAST_RELEASES_FILE, "r") as f:
-            return json.load(f)
-    return {}
+    """Load the last known release IDs from GitHub Gist"""
+    if not GIST_ID:
+        print("⚠️ No GIST_ID provided. Using an empty dictionary for release tracking.")
+        return {}
+
+    try:
+        # Fetch the gist content
+        headers = {
+            "Authorization": f"Bearer {GITHUB_ACCESS_TOKEN}",
+            "Accept": "application/vnd.github+json",
+            "X-GitHub-Api-Version": "2022-11-28",
+        }
+        response = requests.get(
+            f"https://api.github.com/gists/{GIST_ID}", headers=headers
+        )
+        response.raise_for_status()
+
+        gist_data = response.json()
+        if GIST_FILENAME in gist_data["files"]:
+            content = gist_data["files"][GIST_FILENAME]["content"]
+            return json.loads(content)
+        else:
+            print(f"⚠️ File {GIST_FILENAME} not found in Gist. Using empty dictionary.")
+            return {}
+    except Exception as e:
+        print(f"⚠️ Error loading releases from Gist: {str(e)}. Using empty dictionary.")
+        return {}
 
 
 def save_last_release(releases_data):
-    """Save the last release IDs for all repositories"""
-    with open(LAST_RELEASES_FILE, "w") as f:
-        json.dump(releases_data, f, indent=2)
+    """Save the last release IDs to GitHub Gist"""
+    if not GIST_ID:
+        print("⚠️ No GIST_ID provided. Release data not saved.")
+        return
+
+    try:
+        # Prepare the gist update payload
+        headers = {
+            "Authorization": f"Bearer {GITHUB_ACCESS_TOKEN}",
+            "Accept": "application/vnd.github+json",
+            "X-GitHub-Api-Version": "2022-11-28",
+        }
+
+        payload = {
+            "files": {GIST_FILENAME: {"content": json.dumps(releases_data, indent=2)}}
+        }
+
+        # Update the gist
+        response = requests.patch(
+            f"https://api.github.com/gists/{GIST_ID}", headers=headers, json=payload
+        )
+        response.raise_for_status()
+        print(f"✅ Successfully updated release data in Gist ({GIST_ID})")
+    except Exception as e:
+        print(f"❌ Error saving releases to Gist: {str(e)}")
 
 
 def github_to_slack_markdown(text):
