@@ -4,6 +4,7 @@ import json
 import re
 from pathlib import Path
 import html2text
+from http.server import BaseHTTPRequestHandler
 
 
 # List of repositories to monitor (owner/repo format)
@@ -226,6 +227,26 @@ def main():
 
     # Save all release IDs at once
     save_last_release(last_releases)
+
+
+def handle_request(request):
+    """Handler for serverless function requests"""
+    main()
+    return {
+        "statusCode": 200,
+        "body": json.dumps({"message": "GitHub releases check completed successfully"}),
+    }
+
+
+class Handler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        """Handle GET requests for Vercel serverless function"""
+        result = handle_request(self)
+        self.send_response(result["statusCode"])
+        self.send_header("Content-type", "application/json")
+        self.end_headers()
+        self.wfile.write(result["body"].encode())
+        return
 
 
 if __name__ == "__main__":
